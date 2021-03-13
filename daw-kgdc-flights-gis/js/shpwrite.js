@@ -13122,9 +13122,17 @@ module.exports.polygon = justType('Polygon', 'POLYGON');
 
 function justType(type, TYPE) {
   return function(gj) {
-    var oftype = gj.features.filter(isType(type));
+    var oftype;
+    var geometries;
+    if (TYPE === 'POLYLINE') {
+        oftype = gj.features.filter(isTypeLineString(type));
+        geometries = oftype.map(function(t) { return [justCoords(t)]; });
+    } else {
+        oftype = gj.features.filter(isTypeOthers(type));
+        geometries = oftype.map(justCoords);
+    }
     return {
-      geometries: oftype.map(justCoords),
+      geometries: geometries,
       properties: oftype.map(justProps),
       type: TYPE
     };
@@ -13139,9 +13147,13 @@ function justProps(t) {
   return t.properties;
 }
 
-function isType(t) {
-  return function(f) { return f.geometry.type.replace('Multi', '') === t; };
+function isTypeLineString(t) {
+    return function(f) { return f.geometry.type === t; };
 }
+
+function isTypeOthers(t) {
+    return function(f) { return f.geometry.type.replace('Multi', '') === t; };
+  }
 },{}],59:[function(require,module,exports){
 var ext = require('./extent');
 
