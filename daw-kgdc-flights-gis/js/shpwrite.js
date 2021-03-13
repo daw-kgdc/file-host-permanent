@@ -13065,8 +13065,6 @@ module.exports.enlarge = function enlargeExtent(extent, pt) {
     if (pt[0] > extent.xmax) extent.xmax = pt[0];
     if (pt[1] < extent.ymin) extent.ymin = pt[1];
     if (pt[1] > extent.ymax) extent.ymax = pt[1];
-    if (pt[2] && pt[2] < extent.zmin) extent.zmin = pt[2];
-    if (pt[2] && pt[2] > extent.zmax) extent.zmax = pt[2];
     return extent;
 };
 
@@ -13075,8 +13073,6 @@ module.exports.enlargeExtent = function enlargeExtent(extent, ext) {
     if (ext.xmin < extent.xmin) extent.xmin = ext.xmin;
     if (ext.ymax > extent.ymax) extent.ymax = ext.ymax;
     if (ext.ymin < extent.ymin) extent.ymin = ext.ymin;
-    if (ext.zmax && ext.zmax > extent.zmax) extent.zmax = ext.zmax;
-    if (ext.zmin && ext.zmin < extent.zmin) extent.zmin = ext.zmin;
     return extent;
 };
 
@@ -13084,10 +13080,8 @@ module.exports.blank = function() {
     return {
         xmin: Number.MAX_VALUE,
         ymin: Number.MAX_VALUE,
-        zmin: Number.MAX_VALUE,
         xmax: -Number.MAX_VALUE,
-        ymax: -Number.MAX_VALUE,
-        zmax: -Number.MAX_VALUE
+        ymax: -Number.MAX_VALUE
     };
 };
 
@@ -13122,24 +13116,24 @@ function obj(_) {
 }
 
 },{"./types":62}],58:[function(require,module,exports){
-module.exports.point = justType('Point', 'POINT', false);
-module.exports.pointZ = justType('Point', 'POINTZ', true);
-module.exports.line = justType('LineString', 'POLYLINE', false);
-module.exports.lineZ = justType('LineString', 'POLYLINEZ', true);
-module.exports.polygon = justType('Polygon', 'POLYGON', false);
-module.exports.polygonZ = justType('Polygon', 'POLYGONZ', true);
+module.exports.point = justType('Point', 'POINT');
+module.exports.line = justType('LineString', 'POLYLINE');
+module.exports.polygon = justType('Polygon', 'POLYGON');
 
-function justType(type, TYPE, just3d) {
+function justType(type, TYPE) {
     return function(gj) {
-        var ofType = gj.features.filter(isType(type));
-        var ofDimension = ofType.filter(isOfDimension(TYPE, just3d));
-
+        var oftype = gj.features.filter(isType(type));
+        var geometries;
+        if (TYPE === 'POLYGON') {
+            geometries = [oftype.map(function(t) { return [justCoords(t)]; })];
+        } else if (TYPE === 'POLYLINE') {
+            geometries = oftype.map(function(t) { return [justCoords(t)]; });
+        } else {
+            geometries = oftype.map(justCoords);
+        }
         return {
-            geometries: (TYPE === 'POLYLINE' || TYPE === 'POLYLINEZ' ||
-                         TYPE === 'POLYGON'  || TYPE === 'POLYGONZ') ?
-                [ofDimension.map(justCoords)] :
-                ofDimension.map(justCoords),
-            properties: ofDimension.map(justProps),
+            geometries: geometries,
+            properties: oftype.map(justProps),
             type: TYPE
         };
     };
@@ -13149,7 +13143,6 @@ function justCoords(t) {
     if (t.geometry.coordinates[0] !== undefined &&
         t.geometry.coordinates[0][0] !== undefined &&
         t.geometry.coordinates[0][0][0] !== undefined) {
-        // Unwraps rings
         return t.geometry.coordinates[0];
     } else {
         return t.geometry.coordinates;
@@ -13164,55 +13157,32 @@ function isType(t) {
     return function(f) { return f.geometry.type === t; };
 }
 
-function isOfDimension(TYPE, just3d) {
-    return function(f) {
-        var coordinates;
-        if (TYPE === 'POINT' || TYPE === 'POINTZ') {
-            coordinates = f.geometry.coordinates;
-        }
-        else {
-            coordinates = Array.isArray(f.geometry.coordinates[0][0]) ?
-                f.geometry.coordinates[0][0] :
-                f.geometry.coordinates[0];
-        }
-        return just3d ? coordinates.length === 3 : coordinates.length === 2;
-    }
-}
-
 },{}],59:[function(require,module,exports){
 var ext = require('./extent');
-var types = require('./types');
 
 module.exports.write = function writePoints(coordinates, extent, shpView, shxView) {
 
-    var
-        fileLength = 100, // starts with 100 as this is the fixed header length
+    var contentLength = 28, // 8 header, 20 content
+        fileLength = 100,
         shpI = 0,
         shxI = 0;
 
-    coordinates.forEach(function writePoint(coords, index) {
-        var is3d = !!coords[2],
-            contentLength = is3d ? 44 : 28; // 8 header + 20 content, 8 header + 36 content when 3d
+    coordinates.forEach(function writePoint(coords, i) {
         // HEADER
         // 4 record number
         // 4 content length in 16-bit words (20/2)
-        shpView.setInt32(shpI, index);
-        shpView.setInt32(shpI + 4, (contentLength - 8) / 2);
+        shpView.setInt32(shpI, i);
+        shpView.setInt32(shpI + 4, 10);
 
         // record
         // (8 + 8) + 4 = 20 content length
-        // For 3d (8 + 8 + 8) + 4 = 28 content length
-        shpView.setInt32(shpI + 8, (is3d ? types.geometries.POINTZ : types.geometries.POINT), true); // 4
-        shpView.setFloat64(shpI + 12, coords[0], true); // X // 8
-        shpView.setFloat64(shpI + 20, coords[1], true); // Y // 8
-        if (is3d) {
-            shpView.setFloat64(shpI + 28, coords[2], true); // Z // 8
-            shpView.setFloat64(shpI + 36, Math.pow(38, -10) - 1, true); // M // 8
-        }
+        shpView.setInt32(shpI + 8, 1, true); // POINT=1
+        shpView.setFloat64(shpI + 12, coords[0], true); // X
+        shpView.setFloat64(shpI + 20, coords[1], true); // Y
 
         // index
         shxView.setInt32(shxI, fileLength / 2); // length in 16-bit words
-        shxView.setInt32(shxI + 4, is3d ? 18 : 10);
+        shxView.setInt32(shxI + 4, 10);
 
         shxI += 8;
         shpI += contentLength;
@@ -13235,14 +13205,10 @@ module.exports.shxLength = function(coordinates) {
 };
 
 module.exports.shpLength = function(coordinates) {
-    // header: 8 bytes + shape type (4 bytes) +
-    // either 2 * 8 bytes (XY) or 4 * 8 bytes (XYZM)
-    return coordinates.reduce(function(length, coordinate) {
-        return length + (coordinate.length === 3 ? 44 : 28);
-    }, 0);
+    return coordinates.length * 28;
 };
 
-},{"./extent":56,"./types":62}],60:[function(require,module,exports){
+},{"./extent":56}],60:[function(require,module,exports){
 var ext = require('./extent'),
     types = require('./types');
 
@@ -13258,15 +13224,7 @@ module.exports.write = function writePoints(geometries, extent, shpView, shxView
 
         var flattened = justCoords(coordinates),
             noParts = parts([coordinates], TYPE),
-            contentLength = (flattened.length * 16) + 48 + (noParts - 1) * 4,
-            is3d = !!flattened[0][2];
-
-        // For a 3d shape the following additional information is present:
-        // ZMin, ZMax (8 bytes each)
-        // ZArray (8 bytes per point)
-        if (is3d) {
-            contentLength += 16 + flattened.length * 8;
-        }
+            contentLength = (flattened.length * 16) + 48 + (noParts - 1) * 4;
 
         var featureExtent = flattened.reduce(function(extent, c) {
             return ext.enlarge(extent, c);
@@ -13274,7 +13232,7 @@ module.exports.write = function writePoints(geometries, extent, shpView, shxView
 
         // INDEX
         shxView.setInt32(shxI, shxOffset / 2); // offset
-        shxView.setInt32(shxI + 4, contentLength / 2); // content length
+        shxView.setInt32(shxI + 4, contentLength / 2); // offset length
 
         shxI += 8;
         shxOffset += contentLength + 8;
@@ -13308,39 +13266,19 @@ module.exports.write = function writePoints(geometries, extent, shpView, shxView
             );
         }
 
-        // Points
         flattened.forEach(function writeLine(coords, i) {
             shpView.setFloat64(shpI + 56 + (i * 16) + (noParts - 1) * 4, coords[0], true); // X
             shpView.setFloat64(shpI + 56 + (i * 16) + (noParts - 1) * 4 + 8, coords[1], true); // Y
         });
-
-        if (is3d) {
-            // Byte position Y as in spec
-            var y = (shpI + 56 + (i * 16) + (noParts - 1) * 4) + 16 * flattened.length;
-
-            shpView.setFloat64(y, featureExtent.zmin, true);
-            shpView.setFloat64(y + 8, featureExtent.zmax, true);
-            flattened.forEach(function writeZArray(point, index) {
-                shpView.setFloat64(y + 16 + index * 8, point[2], true);
-            });
-        }
 
         shpI += contentLength + 8;
     }
 };
 
 module.exports.shpLength = function(geometries) {
-    // NOTE: parts array length should not be included
-    // as this is calculated in write.js
-
-    var flattened = justCoords(geometries),
-        is3d = !!flattened[0][2];
-
-    // geometry base length = 56 (up to points, including 8 byte record header)
     return (geometries.length * 56) +
         // points
-        (flattened.length * 16) +
-        (is3d ? 16 + flattened.length * 8 : 0);
+        (justCoords(geometries).length * 16);
 };
 
 module.exports.shxLength = function(geometries) {
@@ -13355,9 +13293,7 @@ module.exports.extent = function(coordinates) {
 
 function parts(geometries, TYPE) {
     var no = 1;
-    if (TYPE === types.geometries.POLYGON || TYPE === types.geometries.POLYGONZ ||
-        TYPE === types.geometries.POLYLINE || TYPE === types.geometries.POLYLINEZ)
-    {
+    if (TYPE === types.geometries.POLYGON || TYPE === types.geometries.POLYLINE)  {
         no = geometries.reduce(function (no, coords) {
             no += coords.length;
             if (Array.isArray(coords[0][0][0])) { // multi
@@ -13373,9 +13309,15 @@ function parts(geometries, TYPE) {
 
 module.exports.parts = parts;
 
+function totalPoints(geometries) {
+    var sum = 0;
+    geometries.forEach(function(g) { sum += g.length; });
+    return sum;
+}
+
 function justCoords(coords, l) {
     if (l === undefined) l = [];
-    if (typeof coords[0][0] === 'object') {
+    if (typeof coords[0][0] == 'object') {
         return coords.reduce(function(memo, c) {
             return memo.concat(justCoords(c));
         }, l);
@@ -13383,6 +13325,7 @@ function justCoords(coords, l) {
         return coords;
     }
 }
+
 
 },{"./extent":56,"./types":62}],61:[function(require,module,exports){
 module.exports = 'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]]';
@@ -13416,12 +13359,9 @@ var types = require('./types'),
     polyWriter = require('./poly');
 
 var writers = {
-    1: pointWriter,      // Point
-    3: polyWriter,       // PolyLine
-    5: polyWriter,       // Polygon
-    11: pointWriter,     // PointZ
-    13: polyWriter,      // PolyLineZ
-    15: polyWriter       // PolygonZ
+    1: pointWriter,
+    5: polyWriter,
+    3: polyWriter
 };
 
 var recordHeaderLength = 8;
@@ -13476,25 +13416,21 @@ function writeExtent(extent, view) {
     view.setFloat64(44, extent.ymin, true);
     view.setFloat64(52, extent.xmax, true);
     view.setFloat64(60, extent.ymax, true);
-    view.setFloat64(68, extent.zmin, true);
-    view.setFloat64(76, extent.zmax, true);
-    view.setFloat64(84, 0.0, true); // Measure not supported, so always set to 0
-    view.setFloat64(92, 0.0, true); // Measure not supported, so always set to 0
 }
 
 },{"./extent":56,"./fields":57,"./points":59,"./poly":60,"./prj":61,"./types":62,"assert":1,"dbf":7}],64:[function(require,module,exports){
 (function (process){(function (){
 var write = require('./write'),
     geojson = require('./geojson'),
-    defaultPrj = require('./prj'),
+    prj = require('./prj'),
     JSZip = require('jszip');
 
 module.exports = function(gj, options) {
 
-    var zip = new JSZip();
-    var prj = (options && options.prj) ? options.prj : defaultPrj;
+    var zip = new JSZip(),
+        layers = zip.folder(options && options.folder ? options.folder : 'layers');
 
-    [geojson.point(gj), geojson.pointZ(gj), geojson.line(gj), geojson.lineZ(gj), geojson.polygon(gj), geojson.polygonZ(gj)]
+    [geojson.point(gj), geojson.line(gj), geojson.polygon(gj)]
         .forEach(function(l) {
         if (l.geometries.length && l.geometries[0].length) {
             write(
@@ -13506,10 +13442,10 @@ module.exports = function(gj, options) {
                 l.geometries,
                 function(err, files) {
                     var fileName = options && options.types[l.type.toLowerCase()] ? options.types[l.type.toLowerCase()] : l.type;
-                    zip.file(fileName + '.shp', files.shp.buffer, { binary: true });
-                    zip.file(fileName + '.shx', files.shx.buffer, { binary: true });
-                    zip.file(fileName + '.dbf', files.dbf.buffer, { binary: true });
-                    zip.file(fileName + '.prj', prj);
+                    layers.file(fileName + '.shp', files.shp.buffer, { binary: true });
+                    layers.file(fileName + '.shx', files.shx.buffer, { binary: true });
+                    layers.file(fileName + '.dbf', files.dbf.buffer, { binary: true });
+                    layers.file(fileName + '.prj', prj);
                 });
         }
     });
