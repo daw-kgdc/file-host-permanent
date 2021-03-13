@@ -13125,7 +13125,7 @@ function justType(type, TYPE) {
         var oftype = gj.features.filter(isType(type));
         var geometries;
         if (TYPE === 'POLYGON') {
-            geometries = [oftype.map(function(t) { return [justCoords(t)]; })];
+            geometries = [oftype.map(justCoords)];
         } else if (TYPE === 'POLYLINE') {
             geometries = oftype.map(function(t) { return [justCoords(t)]; });
         } else {
