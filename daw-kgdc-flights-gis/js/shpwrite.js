@@ -13054,7 +13054,7 @@ process.umask = function() { return 0; };
 },{}],55:[function(require,module,exports){
 var zip = require('./zip');
 
-module.exports = function(gj, options) {
+module.exports = function(gj, options, filename) {
     var content = zip(gj, options);
     var zipBase64Str = 'data:application/zip;base64,' + content;
 
