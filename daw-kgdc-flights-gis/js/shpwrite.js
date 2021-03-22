@@ -17064,8 +17064,7 @@ var zip = require('./zip');
 var saveAs = require('file-saver').saveAs;
 
 module.exports = function(gj, options) {
-  let opts = options;
-  zip(gj, options).then(function(blob) { saveAs(blob, opts.file + '.zip'); });
+  zip(gj, options).then(function(blob) { saveAs(blob, 'kmls-shapefiles.zip'); });
 };
 
 },{"./zip":114,"file-saver":32}],107:[function(require,module,exports){
